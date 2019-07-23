@@ -98,29 +98,12 @@ add_gene("HAVCR2") #alias for TIM3
 add_gene("GATA3")
 add_gene("MT1A")
 add_gene("MT2A")
+add_gene("CD4")
+add_gene("CD8B")
 
 #Sorting into categories
 #Creating a list of interesting genes
-genelist <- c("CD3E", "GZMK", "PDCD1", "LAG3", "HAVCR2", "GATA3", "MT1A", "MT2A")
-#Using the Multimode package to predict the lines in the histogram to filter pos/neg
-gene <- "CD3E"
-
-for (gene in genelist[1:2]) {
-  lines <- sapply( names(data), function (s) {
-    lines <- data[[s]][[ paste0("smooth_", gene)]]
-    lines <- lines[lines<.9]
-    multimode::locmodes(lines^.15, 2 )$location
-  })
-  
-}
-
-
-
-#modes_positions is a tibble including the positions of the three lines for each sample
-modes_positions <- lines %>% t %>% as_tibble( rownames="sample" ) %>%
-  gather( mode, pos, V1:V3 )
-
-
+genelist <- c("CD3E", "GZMK", "PDCD1", "LAG3", "HAVCR2", "GATA3", "MT1A", "MT2A", "CD4", "CD8B")
 
 #Use predicted lines by locfit to filter for SATB2 positive cells, including all cells
 #beyond the second peak line and 90% of cells between valley and second peak line
@@ -136,7 +119,24 @@ for (gene in genelist) {
   }
 }
 
+#Produce histograms
+for (gene in genelist) {
+  hist(data$FL1[[paste0("smooth_", gene)]][data$FL1[[paste0("smooth_", gene) ]] < .9]^.15, main=gene, breaks=100)
+  abline(v=location$FL1[[paste0("locmodes", gene)]]^.15, col="yellow")
+}
 
 
-hist(data$DLBCL2$smooth_CD3E[data$DLBCL2$smooth_CD3E< .9])
-abline(v=location$DLBCL2$locmodesCD3E, col="yellow")
+
+#Do Heatmap for rLN1
+# as_tibble( data$rLN1 )%>%
+#  select(smooth_CD3E, smooth_PDCD1, smooth_LAG3, smooth_GATA3, smooth_HAVCR2, smooth_GZMK) %>%
+#   filter(smooth_CD3E > location$FL1$threshCD3E) %>%
+#   as.matrix()%>%
+#   heatmap(., scale="none")
+
+numerise_smooth <- function( gene) {
+   return( as.numeric(data$FL1[[paste0("smooth_", gene)]] > location$FL1[[paste0("thresh", gene)]]) )
+}
+
+heatmap(sapply(genelist, numerise_smooth), scale ="none")
+
