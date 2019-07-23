@@ -10,6 +10,7 @@ library( locfit )
 library( purrr )
 library( furrr )
 library( tidyverse )
+library(scales)
 source( "spmvar.R" )
 
 #Load data
@@ -88,8 +89,54 @@ add_gene <- function( gene ) {
     
 }
 
+#Smooth interesting marker genes
 add_gene("CD3E")
 add_gene("GZMK")
+add_gene("PDCD1")
+add_gene("LAG3")
+add_gene("HAVCR2") #alias for TIM3
+add_gene("GATA3")
+add_gene("MT1A")
+add_gene("MT2A")
+
+#Sorting into categories
+#Creating a list of interesting genes
+genelist <- c("CD3E", "GZMK", "PDCD1", "LAG3", "HAVCR2", "GATA3", "MT1A", "MT2A")
+#Using the Multimode package to predict the lines in the histogram to filter pos/neg
+gene <- "CD3E"
+
+for (gene in genelist[1:2]) {
+  lines <- sapply( names(data), function (s) {
+    lines <- data[[s]][[ paste0("smooth_", gene)]]
+    lines <- lines[lines<.9]
+    multimode::locmodes(lines^.15, 2 )$location
+  })
+  
+}
 
 
 
+#modes_positions is a tibble including the positions of the three lines for each sample
+modes_positions <- lines %>% t %>% as_tibble( rownames="sample" ) %>%
+  gather( mode, pos, V1:V3 )
+
+
+
+#Use predicted lines by locfit to filter for SATB2 positive cells, including all cells
+#beyond the second peak line and 90% of cells between valley and second peak line
+
+#Creating new list
+location <- list()
+for (gene in genelist) {
+  for( s in names(data) ) {
+    a <- data[[s]][[paste0("smooth_", gene)]]
+    a <- a[ a < .9 ]
+    location[[s]][[paste0("locmodes", gene)]] <- multimode::locmodes( a ^.15, 2 )$location^(1/.15)
+    location[[s]][[paste0("thresh", gene)]] <- location[[s]][[paste0("locmodes", gene)]][2]
+  }
+}
+
+
+
+hist(data$DLBCL2$smooth_CD3E[data$DLBCL2$smooth_CD3E< .9])
+abline(v=location$DLBCL2$locmodesCD3E, col="yellow")
