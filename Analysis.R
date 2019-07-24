@@ -103,7 +103,7 @@ add_gene("CD8B")
 
 #Sorting into categories
 #Creating a list of interesting genes
-genelist <- c("CD3E", "GZMK", "PDCD1", "LAG3", "HAVCR2", "GATA3", "MT1A", "MT2A", "CD4", "CD8B")
+genelist <- c("CD3E", "GZMK", "CD4", "CD8B", "PDCD1", "LAG3", "HAVCR2", "GATA3", "MT1A", "MT2A" )
 
 #Use predicted lines by locfit to filter for SATB2 positive cells, including all cells
 #beyond the second peak line and 90% of cells between valley and second peak line
@@ -120,10 +120,13 @@ for (gene in genelist) {
 }
 
 #Produce histograms
-for (gene in genelist) {
-  hist(data$FL1[[paste0("smooth_", gene)]][data$FL1[[paste0("smooth_", gene) ]] < .9]^.15, main=gene, breaks=100)
-  abline(v=location$FL1[[paste0("locmodes", gene)]]^.15, col="yellow")
+for (sample in names(data)){
+  for (gene in genelist[1:4]) {
+    hist(data[[sample]][[paste0("smooth_", gene)]][data[[sample]][[paste0("smooth_", gene) ]] < .9]^.15, main=c(gene, sample), breaks=100)
+    abline(v=location[[sample]][[paste0("locmodes", gene)]]^.15, col="yellow")
+  }
 }
+
 
 
 
@@ -134,9 +137,14 @@ for (gene in genelist) {
 #   as.matrix()%>%
 #   heatmap(., scale="none")
 
-numerise_smooth <- function( gene) {
-   return( as.numeric(data$FL1[[paste0("smooth_", gene)]] > location$FL1[[paste0("thresh", gene)]]) )
+numerise_smooth <- function( gene ) {
+  sampleDF <- data[[ sample ]][ data[[ sample ]][[ "smooth_CD3E" ]] > location[[ sample ]][[ "threshCD3E" ]], ]
+   return( as.numeric(sampleDF[, paste0("smooth_", gene)] > location[[sample]][[paste0("thresh", gene)]]) )
 }
 
-heatmap(sapply(genelist, numerise_smooth), scale ="none")
+
+for (sample in names(data)) {
+  heatmap( sapply(genelist, numerise_smooth), scale ="none", main=sample)
+}
+
 
