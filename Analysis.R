@@ -119,15 +119,46 @@ for (gene in genelist) {
   }
 }
 
+#Trying different powertransformation
+location.2 <- list()
+for (gene in genelist) {
+  for( s in names(data) ) {
+    a <- data[[s]][[paste0("smooth_", gene)]]
+    a <- a[ a < .9 ]
+    location.2[[s]][[paste0("locmodes", gene)]] <- multimode::locmodes( a ^.05, 2 )$location^(1/.05)
+    location.2[[s]][[paste0("thresh", gene)]] <- location.2[[s]][[paste0("locmodes", gene)]][2]
+  }
+}
+
+
 #Produce histograms
 for (sample in names(data)){
-  for (gene in genelist[1:4]) {
+  for (gene in genelist[3]) {
     hist(data[[sample]][[paste0("smooth_", gene)]][data[[sample]][[paste0("smooth_", gene) ]] < .9]^.15, main=c(gene, sample), breaks=100)
     abline(v=location[[sample]][[paste0("locmodes", gene)]]^.15, col="yellow")
   }
 }
 
+#only FL4
+for (sample in names(data)[10]){
+  for (gene in genelist[3]) {
+    hist(data[[sample]][[paste0("smooth_", gene)]][data[[sample]][[paste0("smooth_", gene) ]] < .9]^.15, main=c(gene, sample), breaks=100)
+    abline(v=location[[sample]][[paste0("locmodes", gene)]]^.15, col="yellow")
+  }
+}
 
+location$rLN3$threshCD4man <- 0.17^(1/.15)
+location$rLN2$threshCD4man <- 0.4^(1/.05)
+location$rLN1$threshCD4man <- 0.6^(1/.05)
+location$FL4$threshCD4man <- 0.55^(1/.05)
+location$FL3$threshCD4man <- 0.55^(1/.05)
+location$FL2$threshCD4man <- 0.575^(1/.05)
+location$FL1$threshCD4man <- 0.575^(1/.05)
+location$DLBCL3$threshCD4man <- 0.85^(1/.01)
+location$DLBCL2$threshCD4man <- 0.85^(1/.01)
+location$DLBCL1$threshCD4man <- 0.7^(1/.01)
+
+location$FL4$threshCD8Bman <- 0.25^(1/.15)
 
 
 #Do Heatmap for rLN1
@@ -139,11 +170,16 @@ for (sample in names(data)){
 
 numerise_smooth <- function( gene ) {
   sampleDF <- data[[ sample ]][ data[[ sample ]][[ "smooth_CD3E" ]] > location[[ sample ]][[ "threshCD3E" ]], ]
-   return( as.numeric(sampleDF[, paste0("smooth_", gene)] > location[[sample]][[paste0("thresh", gene)]]) )
+  if (gene == "CD4" || gene == "CD8B") {
+    return( as.numeric(sampleDF[, paste0("smooth_", gene)] > location[[sample]][[paste0("thresh", gene, "man")]]) )
+  }
+  else {
+    return( as.numeric(sampleDF[, paste0("smooth_", gene)] > location[[sample]][[paste0("thresh", gene)]]) )
+  }
 }
 
 
-for (sample in names(data)) {
+for (sample in names(data)[7]) {
   heatmap( sapply(genelist, numerise_smooth), scale ="none", main=sample)
 }
 
