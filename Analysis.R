@@ -111,7 +111,7 @@ add_gene("CD79B")
 
 #Sorting into categories
 #Creating a list of interesting genes
-genelist <- c("CD3E", "GZMK", "CD4", "CD8B", "PDCD1", "LAG3", "HAVCR2", "GATA3", "MT1A", "MT2A" )
+genelist <- c("CD3E", "GZMK", "CD4", "CD8B", "PDCD1", "LAG3", "HAVCR2", "GATA3", "MT1A", "MT2A", "CD79B" )
 
 #Use predicted lines by locfit to filter for SATB2 positive cells, including all cells
 #beyond the second peak line and 90% of cells between valley and second peak line
@@ -232,12 +232,13 @@ lapply(names(data), function(i){
     UMAP2 = x$UMAP2,
     CD3Epos = CD3Epos[[i]],
     GZMKpos = GZMKpos[[i]],
+    CD79Bneg = CD79Bneg[[i]],
     stringsAsFactors = FALSE)
 }) %>% 
   bind_rows() %>%
   mutate(class=case_when(
-                        CD3Epos & GZMKpos ~ "T_tox",
-                        CD3Epos & !GZMKpos ~ "T_CD4",
+                        CD3Epos & GZMKpos & CD79Bneg ~ "T_tox",
+                        CD3Epos & !GZMKpos & CD79Bneg ~ "T_CD4",
                         TRUE ~ "other")) %>%
 ggplot(aes( UMAP1, UMAP2,
             col= class))+
@@ -246,5 +247,38 @@ ggplot(aes( UMAP1, UMAP2,
 
 
 
-#
+#Create Pseudobulk object
+#1. Filter for CD3E pos, GZMK pos, BCellmarker neg
+#2. Sum up raw UMIs for each gene (rowSums) found in data$sample$raw_gene -> only subset of all genes,
+#need to work with raw counts
+#3. Create Matrix from vectors
+
+gene_overlap <- reduce(lapply(samplenames, function(i) {
+  rownames(i)
+}), intersect)
+
+Pseudobulk <- lapply(names(data),  function(samplename) {
+  Matrix::rowSums( samplenames[[ samplename ]] [ gene_overlap , CD3Epos[[ samplename ]] 
+                                                 & GZMKpos[[ samplename ]] & CD79Bneg[[ samplename ]] ]) 
+  
+}) %>%
+ do.call(cbind, .)
+  colnames(Pseudobulk) <- names(data)
+                  
+#Create colData
+ Condition <-  c("aggressive", "aggressive", "aggressive", 
+    "indolent", "indolent", "indolent", "indolent",
+    "control", "control", "control", "aggressive", "aggressive")
+coldata <- data.frame(Condition[ 2:12, ], row.names = names(data)[2:12])
+
+#Create DESeq object
+library("DESeq2")
+dds <- DESeqDataSetFromMatrix(countData = Pseudobulk[, 2:12],
+                              colData = coldata,
+                              design = ~ Condition)
+dds$Condition <- relevel(dds$Condition, "control")
+cts <- counts(dds)
+geoMeans <- apply(cts, 1, function(row) if (all(row == 0)) 0 else exp(sum(log(row[row != 0]))/length(row)))
+dds <- estimateSizeFactors(dds, geoMeans=geoMeans)
+dds2 <- DESeq(dds)
 
