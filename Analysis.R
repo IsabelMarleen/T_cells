@@ -31,7 +31,7 @@ rLN3 <- Seurat::Read10X( "~/Desktop/T Cells/rLN3")
 tFL1 <- Seurat::Read10X( "~/Desktop/T Cells/tFL1")
 tFL2 <- Seurat::Read10X( "~/Desktop/T Cells/tFL2")
 
-# Make list of sample names
+# Make list of raw counts
 samplenames <- c(DLBCL1, DLBCL2, DLBCL3, FL1, FL2, FL3, FL4, rLN1, rLN2,  rLN3, tFL1, tFL2)
 names(samplenames) <- names(data)
 
@@ -109,7 +109,8 @@ add_gene("CD4")
 add_gene("CD8B")
 add_gene("CD79B")
 
-#Sorting into categories
+##Sorting into categories
+
 #Creating a list of interesting genes
 genelist <- c("CD3E", "GZMK", "CD4", "CD8B", "PDCD1", "LAG3", "HAVCR2", "GATA3", "MT1A", "MT2A", "CD79B" )
 
@@ -127,7 +128,8 @@ for (gene in genelist) {
   }
 }
 
-#Trying different powertransformation #Trying more modes
+#Trying different powertransformation 
+#Trying more modes
 location.2 <- list()
 for (gene in genelist) {
   for( s in names(data) ) {
@@ -170,6 +172,7 @@ for (sample in names(data)[2]){
   }
 }
 
+#Setting manual threshholds for CD4, because locmode is not very good with CD4
 location$rLN3$threshCD4man <- 0.17^(1/.15)
 location$rLN2$threshCD4man <- 0.4^(1/.05)
 location$rLN1$threshCD4man <- 0.6^(1/.05)
@@ -191,6 +194,7 @@ location$FL4$threshCD8Bman <- 0.25^(1/.15)
 #   as.matrix()%>%
 #   heatmap(., scale="none")
 
+#Makes a numeric vector from smoothed gene expression that lies beyond threshhold
 numerise_smooth <- function( gene ) {
   #Will give error when using for samples that are not FL4, no manual CD8 cutoff
   sampleDF <- data[[ sample ]][ data[[ sample ]][[ "smooth_CD3E" ]] > location[[ sample ]][[ "threshCD3E" ]], ]
@@ -202,7 +206,7 @@ numerise_smooth <- function( gene ) {
   }
 }
 
-
+#Produces heatmaps
 for (sample in names(data)) {
   heatmap( sapply(genelist, numerise_smooth), scale ="none", main=sample)
 }
@@ -222,6 +226,8 @@ filter_gene_neg <- function(sample, gene) {
 }
 
 CD79Bneg <- sapply(names(data), filter_gene_neg, "CD79B")
+#Manually setting threshold to fix DLBCL3 sample, threshold found by Multimode wiht power transformation .5
+CD79Bneg$DLBCL3 <-  data$DLBCL3$smooth_CD79B < 0.01672978^(1/.5)
 
 #Look at T cell division (CD3E pos/neg) in UMAP
 lapply(names(data), function(i){
@@ -246,6 +252,7 @@ ggplot(aes( UMAP1, UMAP2,
   facet_wrap(~sample)
 
 
+##Cytotoxic T-Cells
 
 #Create Pseudobulk object
 #1. Filter for CD3E pos, GZMK pos, BCellmarker neg
@@ -269,16 +276,55 @@ Pseudobulk <- lapply(names(data),  function(samplename) {
  Condition <-  c("aggressive", "aggressive", "aggressive", 
     "indolent", "indolent", "indolent", "indolent",
     "control", "control", "control", "aggressive", "aggressive")
-coldata <- data.frame(Condition[ 2:12, ], row.names = names(data)[2:12])
+coldata <- data.frame(Condition, row.names = names(data))
 
 #Create DESeq object
 library("DESeq2")
-dds <- DESeqDataSetFromMatrix(countData = Pseudobulk[, 2:12],
+dds <- DESeqDataSetFromMatrix(countData = Pseudobulk,
                               colData = coldata,
                               design = ~ Condition)
 dds$Condition <- relevel(dds$Condition, "control")
-cts <- counts(dds)
-geoMeans <- apply(cts, 1, function(row) if (all(row == 0)) 0 else exp(sum(log(row[row != 0]))/length(row)))
-dds <- estimateSizeFactors(dds, geoMeans=geoMeans)
-dds2 <- DESeq(dds)
+#Error because of 0 in DLBCL3, because locmodes failed to set sensible threshhold, no cells remained
+#now threshhold with ^0.5 power transformation to replace
+#Pre-filtering to get ridd of NAs
+keep <- rowSums(counts(dds)) >= 10
+dds <- dds[keep,]
+dds <- DESeq(dds)
+res <-  results(dds, contrast=c("Condition", "aggressive", "indolent"))
 
+
+## CD4 Cells
+
+#Create Pseudobulk object
+#1. Filter for CD3E pos, GZMK pos, BCellmarker neg
+#2. Sum up raw UMIs for each gene (rowSums) found in data$sample$raw_gene -> only subset of all genes,
+#need to work with raw counts
+#3. Create Matrix from vectors
+
+Pseudobulk2 <- lapply(names(data),  function(samplename) {
+  Matrix::rowSums( samplenames[[ samplename ]] [ gene_overlap , !CD3Epos[[ samplename ]] 
+                                                 & !GZMKpos[[ samplename ]] & !CD79Bneg[[ samplename ]] ]) 
+  
+}) %>%
+  do.call(cbind, .)
+colnames(Pseudobulk2) <- names(data)
+
+#Create colData
+Condition <-  c("aggressive", "aggressive", "aggressive", 
+                "indolent", "indolent", "indolent", "indolent",
+                "control", "control", "control", "aggressive", "aggressive")
+coldata2 <- data.frame(Condition, row.names = names(data))
+
+#Create DESeq object
+library("DESeq2")
+dds2 <- DESeqDataSetFromMatrix(countData = Pseudobulk2,
+                              colData = coldata2,
+                              design = ~ Condition)
+dds2$Condition <- relevel(dds2$Condition, "control")
+#Error because of 0 in DLBCL3, because locmodes failed to set sensible threshhold, no cells remained
+#now threshhold with ^0.5 power transformation to replace
+#Pre-filtering to get ridd of NAs
+keep2 <- rowSums(counts(dds2)) >= 10
+dds2 <- dds2[keep2,]
+dds2 <- DESeq(dds2)
+res2 <-  results(dds2, contrast=c("Condition", "aggressive", "indolent"))
