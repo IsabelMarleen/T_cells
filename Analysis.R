@@ -155,15 +155,15 @@ for (gene in genelist) {
 
 #Produce histograms
 for (sample in names(data)[2]){
-  for (gene in genelist[2]) {
-    hist(data[[sample]][[paste0("smooth_", gene)]][data[[sample]][[paste0("smooth_", gene) ]] < .9]^.15, main=c(gene, sample, "mit B Zellen"), breaks=100)
+  for (gene in genelist[1:4]) {
+    hist(data[[sample]][[paste0("smooth_", gene)]][data[[sample]][[paste0("smooth_", gene) ]] < .9]^.15, main=c(gene, sample, "with B Cells"), breaks=100)
     abline(v=location[[sample]][[paste0("locmodes", gene)]]^.15, col="yellow")
   }
 }
 
 #only FL4
-for (sample in names(data)[2]){
-  for (gene in genelist[2]) {
+for (sample in names(data)[7]){
+  for (gene in genelist[3]) {
     da <- data[[sample]][[paste0("smooth_", gene)]][ CD3Epos[[ sample ]] ]
     da <- da[da < .9] 
     da <- da^.15 %>%
@@ -173,18 +173,24 @@ for (sample in names(data)[2]){
 }
 
 #Setting manual threshholds for CD4, because locmode is not very good with CD4
-location$rLN3$threshCD4man <- 0.17^(1/.15)
-location$rLN2$threshCD4man <- 0.4^(1/.05)
-location$rLN1$threshCD4man <- 0.6^(1/.05)
-location$FL4$threshCD4man <- 0.55^(1/.05)
-location$FL3$threshCD4man <- 0.55^(1/.05)
-location$FL2$threshCD4man <- 0.575^(1/.05)
-location$FL1$threshCD4man <- 0.575^(1/.05)
-location$DLBCL3$threshCD4man <- 0.85^(1/.01)
-location$DLBCL2$threshCD4man <- 0.85^(1/.01)
-location$DLBCL1$threshCD4man <- 0.7^(1/.01)
+location$rLN3$threshCD4 <- 0.17^(1/.15)
+location$rLN2$threshCD4 <- 0.4^(1/.05)
+location$rLN1$threshCD4 <- 0.6^(1/.05)
+location$FL4$threshCD4 <- 0.55^(1/.05)
+location$FL3$threshCD4 <- 0.55^(1/.05)
+location$FL2$threshCD4 <- 0.575^(1/.05)
+location$FL1$threshCD4 <- 0.575^(1/.05)
+location$DLBCL3$threshCD4 <- 0.85^(1/.01)
+location$DLBCL2$threshCD4 <- 0.85^(1/.01)
+location$DLBCL1$threshCD4 <- 0.7^(1/.01)
 
 location$FL4$threshCD8Bman <- 0.25^(1/.15)
+
+
+
+
+#Heatmaps
+
 
 
 #Do Heatmap for rLN1
@@ -210,6 +216,117 @@ numerise_smooth <- function( gene ) {
 for (sample in names(data)) {
   heatmap( sapply(genelist, numerise_smooth), scale ="none", main=sample)
 }
+
+
+
+#New colorscale for heatmap to improve distinction
+x <- matrix()
+gene <- "CD3E"
+for (sample in names(data)) {
+  for (gene in genelist[1:4]) {
+    x[[sample]][[ gene]] <- data[[sample]][[paste0("smooth_", gene )]]^.15 %>%
+     scale( center=location[[ sample ]][[ paste0( "thresh", gene ) ]], 
+             scale=location[[ sample ]][[ paste0( "locmodes", gene ) ]][3] - 
+               location[[ sample ]][[ paste0( "locmodes", gene ) ]][2] )
+}
+  }
+ %>%
+  do.call(rbind, .)#%>%
+  matrix()#%>%
+  bind_rows() #%>%
+
+scale_manual <- function(sample, gene) {
+  x <- data[[ sample ]][[ paste0( "smooth_", gene ) ]]
+  xi <- location[[ sample ]][[ paste0( "thresh", gene ) ]]
+  h <- location[[ sample ]][[ paste0( "locmodes", gene ) ]][ 3 ] - 
+    location[[ sample ]][[ paste0( "thresh", gene ) ]]
+  y= 1/ (1+ exp((x+xi)/h))
+}
+
+scale2_manual <- function(sample, gene, h) {
+  x <- data[[ sample ]][[ paste0( "smooth_", gene ) ]]
+  xi <- location[[ sample ]][[ paste0( "thresh", gene ) ]]
+  y= 1/ (1+ exp((x+xi)/h))
+  return(y)
+}
+
+#New column with cellid
+genes_scaled <- cbind(  CD3E = unlist(sapply( names( data ), scale_manual, "CD3E" ) ), 
+                        CD4 = unlist(sapply( names( data ), scale_manual, "CD4" ) ),
+                        CD8B = unlist(sapply( names( data ), scale_manual, "CD8B" ) ),
+                        GZMK = unlist(sapply( names( data ), scale_manual, "GZMK" ) ) )
+cellid <- c(1:length(data$DLBCL1$smooth_CD3E), 1:length(data$DLBCL2$smooth_CD3E), 
+            1:length(data$DLBCL3$smooth_CD3E), 1:length(data$FL1$smooth_CD3E), 
+            1:length(data$FL2$smooth_CD3E), 1:length(data$FL3$smooth_CD3E),
+            1:length(data$FL4$smooth_CD3E), 1:length(data$rLN1$smooth_CD3E),
+            1:length(data$rLN2$smooth_CD3E), 1:length(data$rLN3$smooth_CD3E),
+            1:length(data$tFL1$smooth_CD3E), 1:length(data$tFL2$smooth_CD3E))
+genes_scaled <- cbind(genes_scaled, cellid=cellid)
+genes_scaled <- gather(as.data.frame(genes_scaled), key=gene, value=intensity, -cellid)
+ 
+#For just one sample, DLBCL2
+genes_scaled <- cbind(  CD3E = scale_manual( "DLBCL2", "CD3E" ), 
+                        CD4 = scale2_manual( "DLBCL2", "CD4", 2 ) ,
+                        CD8B = scale_manual( "DLBCL2", "CD8B" ) ,
+                        GZMK = scale_manual( "DLBCL2", "GZMK" ) )
+
+pheatmap(genes_scaled[order(genes_scaled[, "CD4"]), ], 
+         cluster_rows = FALSE)
+
+
+cellid <- c(1:length(data$DLBCL2$smooth_CD3E))
+genes_scaled <- cbind(genes_scaled, cellid=cellid) 
+
+genes_scaled <- genes_scaled %>%
+as.data.frame() %>%
+  arrange(CD4) %>%
+  rownames_to_column("id")%>%
+as.matrix() 
+  pheatmap(genes_scaled)
+  
+  
+sample <- "DLBCL2"
+gene <- "CD4"
+  
+x <- data[[ sample ]][[ paste0( "smooth_", gene ) ]]
+#x <- x[x<.9]
+x <- x^.1
+#x <- seq(-5, 5, .1)
+plot(x, 1/(1+exp(-(x-.25)/.025)))
+hist(x)  
+  
+gene <- "CD8B"
+z <- data[[ sample ]][[ paste0( "smooth_", gene ) ]]
+#z <- z[z<.9]
+z <- z^.1
+plot(z, 1/(1+exp(-(z-.25)/.025)))
+  #ggplot( aes(gene, id)) +
+  #geom_tile(aes(fill=intensity))
+
+z <- 1/(1+exp(-(z-.25)/.025))
+x <- 1/(1+exp(-(x-.25)/.025))
+
+gene <- "CD3E"
+w <- data[[ sample ]][[ paste0( "smooth_", gene ) ]]
+#z <- z[z<.9]
+w <- w^.1
+w <- 1/(1+exp(-(w-.25)/.025))
+plot(w, 1/(1+exp(-(w-.35)/.025)))
+
+testmatrix <- cbind(CD8=z, CD4=x, CD3E=w)
+testmatrix <- testmatrix[CD3Epos$DLBCL2]
+pheatmap(testmatrix)
+
+
+
+
+heatmap(genes_scaled[4123:9461, ], main ="DLBCL2")
+
+DLBCL2smooth <- as_tibble(data$DLBCL2) %>%
+  select(smooth_CD3E, smooth_CD8B, smooth_GZMK, smooth_CD4)
+
+ggplot(DLBCL2smooth) + geom_tile(aes(fill = genes_scaled[4123:9461, ]))
+
 
 
 #Filter for CD3E and GZMK pos and B cell marker CD79B
@@ -252,8 +369,10 @@ ggplot(aes( UMAP1, UMAP2,
   facet_wrap(~sample)
 
 
-##Cytotoxic T-Cells
 
+
+##Cytotoxic T-Cells
+#Without DLBCL1, no T-cells
 #Create Pseudobulk object
 #1. Filter for CD3E pos, GZMK pos, BCellmarker neg
 #2. Sum up raw UMIs for each gene (rowSums) found in data$sample$raw_gene -> only subset of all genes,
@@ -276,22 +395,24 @@ Pseudobulk <- lapply(names(data),  function(samplename) {
  Condition <-  c("aggressive", "aggressive", "aggressive", 
     "indolent", "indolent", "indolent", "indolent",
     "control", "control", "control", "aggressive", "aggressive")
-coldata <- data.frame(Condition, row.names = names(data))
+coldata <- data.frame(Condition = Condition[2:12 ], row.names = names(data)[2:12 ])
 
 #Create DESeq object
 library("DESeq2")
-dds <- DESeqDataSetFromMatrix(countData = Pseudobulk,
+dds <- DESeqDataSetFromMatrix(countData = Pseudobulk[, 2:12],
                               colData = coldata,
                               design = ~ Condition)
 dds$Condition <- relevel(dds$Condition, "control")
 #Error because of 0 in DLBCL3, because locmodes failed to set sensible threshhold, no cells remained
-#now threshhold with ^0.5 power transformation to replace
+#now threshhold with ^0.5 power transformation to replace for CD79B
 #Pre-filtering to get ridd of NAs
 keep <- rowSums(counts(dds)) >= 10
 dds <- dds[keep,]
 dds <- DESeq(dds)
 res <-  results(dds, contrast=c("Condition", "aggressive", "indolent"))
 
+#Visualising results
+plotMA(res, ylim=c(-2,2), main="Cytotoxic T Cells")
 
 ## CD4 Cells
 
@@ -323,8 +444,12 @@ dds2 <- DESeqDataSetFromMatrix(countData = Pseudobulk2,
 dds2$Condition <- relevel(dds2$Condition, "control")
 #Error because of 0 in DLBCL3, because locmodes failed to set sensible threshhold, no cells remained
 #now threshhold with ^0.5 power transformation to replace
+
 #Pre-filtering to get ridd of NAs
 keep2 <- rowSums(counts(dds2)) >= 10
 dds2 <- dds2[keep2,]
 dds2 <- DESeq(dds2)
 res2 <-  results(dds2, contrast=c("Condition", "aggressive", "indolent"))
+
+#Visualising results
+plotMA(res2, ylim=c(-2,2), main="CD4 Cells")
