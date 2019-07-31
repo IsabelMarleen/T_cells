@@ -14,6 +14,7 @@ library(scales)
 source( "spmvar.R" )
 source("~/Desktop/sc_methods_dev/src/functions_universal.R")
 source("~/Desktop/sc_methods_dev/src/functions_specific.R")
+meta <- read.csv("~/Desktop/T Cells/sample_sheet.csv")
 
 
 #Load data
@@ -108,6 +109,7 @@ add_gene("MT2A")
 add_gene("CD4")
 add_gene("CD8B")
 add_gene("CD79B")
+add_gene("CD70")
 
 ##Sorting into categories
 
@@ -154,8 +156,8 @@ for (gene in genelist) {
 }
 
 #Produce histograms
-for (sample in names(data)[2]){
-  for (gene in genelist[1:4]) {
+for (sample in names(data)[7]){
+  for (gene in genelist[4]) {
     hist(data[[sample]][[paste0("smooth_", gene)]][data[[sample]][[paste0("smooth_", gene) ]] < .9]^.15, main=c(gene, sample, "with B Cells"), breaks=100)
     abline(v=location[[sample]][[paste0("locmodes", gene)]]^.15, col="yellow")
   }
@@ -163,7 +165,7 @@ for (sample in names(data)[2]){
 
 #only FL4
 for (sample in names(data)[7]){
-  for (gene in genelist[3]) {
+  for (gene in genelist[2]) {
     da <- data[[sample]][[paste0("smooth_", gene)]][ CD3Epos[[ sample ]] ]
     da <- da[da < .9] 
     da <- da^.15 %>%
@@ -356,6 +358,9 @@ lapply(names(data), function(i){
     CD3Epos = CD3Epos[[i]],
     GZMKpos = GZMKpos[[i]],
     CD79Bneg = CD79Bneg[[i]],
+    CD4 = x$smooth_CD4,
+    CD8 = x$smooth_CD8B,
+    GZMK= x$smooth_GZMK,
     stringsAsFactors = FALSE)
 }) %>% 
   bind_rows() %>%
@@ -364,11 +369,54 @@ lapply(names(data), function(i){
                         CD3Epos & !GZMKpos & CD79Bneg ~ "T_CD4",
                         TRUE ~ "other")) %>%
 ggplot(aes( UMAP1, UMAP2,
-            col= class))+
+            col= sigmoid(GZMK^.15,  0.3)))+
+  geom_point( size=0.2)+
+  facet_wrap(~sample)+
+  scale_color_gradient2(midpoint=0.5)
+
+lapply(names(data), function(i){
+  x <- data[[i]]
+  data.frame(
+    sample = i,
+    UMAP1 = x$UMAP1,
+    UMAP2 = x$UMAP2,
+    CD3Epos = CD3Epos[[i]],
+    GZMKpos = GZMKpos[[i]],
+    CD79Bneg = CD79Bneg[[i]],
+    CD4 = x$smooth_CD4,
+    CD8 = x$smooth_CD8B,
+    stringsAsFactors = FALSE)
+}) %>% 
+  bind_rows() %>%
+  mutate(class=case_when(
+    CD3Epos & GZMKpos & CD79Bneg ~ "T_tox",
+    CD3Epos & !GZMKpos & CD79Bneg ~ "T_CD4",
+    TRUE ~ "other")) %>%
+  ggplot(aes( UMAP1, UMAP2,
+              col= class))+
   geom_point( size=0.2)+
   facet_wrap(~sample)
 
 
+data %>%
+  bind_rows( .id="sample" ) %>%
+  as_tibble %>%
+ggplot +
+  geom_point(aes( 
+    x = UMAP1, y = UMAP2, 
+    col = sigmoid( smooth_GZMK^.15, .3 ) ) ) +
+  facet_wrap( ~ sample ) +
+  scale_color_gradient2( midpoint=0.5 )
+
+
+data %>%
+  bind_rows( .id="sample" ) %>%
+  as_tibble %>%
+ggplot +
+  geom_point( aes( 
+    x = raw_GZMK^.15,
+    y = raw_CD70^.15 ), size=.1, alpha=.5 ) +
+  facet_wrap( ~ sample )
 
 
 ##Cytotoxic T-Cells
@@ -395,13 +443,13 @@ Pseudobulk <- lapply(names(data),  function(samplename) {
  Condition <-  c("aggressive", "aggressive", "aggressive", 
     "indolent", "indolent", "indolent", "indolent",
     "control", "control", "control", "aggressive", "aggressive")
-coldata <- data.frame(Condition = Condition[2:12 ], row.names = names(data)[2:12 ])
+coldata <- data.frame(Condition = Condition[2:12 ], row.names = names(data)[2:12 ], Sex = meta$Sex[2:12])
 
 #Create DESeq object
 library("DESeq2")
 dds <- DESeqDataSetFromMatrix(countData = Pseudobulk[, 2:12],
                               colData = coldata,
-                              design = ~ Condition)
+                              design = ~ Sex + Condition)
 dds$Condition <- relevel(dds$Condition, "control")
 #Error because of 0 in DLBCL3, because locmodes failed to set sensible threshhold, no cells remained
 #now threshhold with ^0.5 power transformation to replace for CD79B
@@ -453,3 +501,16 @@ res2 <-  results(dds2, contrast=c("Condition", "aggressive", "indolent"))
 
 #Visualising results
 plotMA(res2, ylim=c(-2,2), main="CD4 Cells")
+
+
+
+data.frame(UMAP1=data$FL4$UMAP1, UMAP2=data$FL4$UMAP2, 
+           CD8 = data$FL4$raw_CD8B, colSums= data$FL4$colsums, CD4=data$FL4$raw_CD4, GZMK=data$FL4$raw_GZMK)%>%
+ggplot(aes(UMAP1, UMAP2, col=(CD8/colSums)^.5)) +
+geom_point() +
+  scale_color_gradientn(colours = rev(rje::cubeHelix(10))[2:10])
+
+
+
+
+
