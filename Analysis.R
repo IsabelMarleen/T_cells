@@ -110,11 +110,19 @@ add_gene("CD4")
 add_gene("CD8B")
 add_gene("CD79B")
 add_gene("CD70")
+add_gene("MAST1")
+add_gene("ELFN1-AS1")
+add_gene("PLAC8")
+add_gene("PDCD1")
+add_gene("IL2RA")
 
-##Sorting into categories
+
+
 
 #Creating a list of interesting genes
-genelist <- c("CD3E", "GZMK", "CD4", "CD8B", "PDCD1", "LAG3", "HAVCR2", "GATA3", "MT1A", "MT2A", "CD79B" )
+genelist <- c("CD3E", "GZMK", "CD4", "CD8B", "PDCD1", "LAG3", 
+              "HAVCR2", "GATA3", "MT1A", "MT2A", "CD79B", "PLAC8", 
+              "PDCD1", "IL2RA" )
 
 #Use predicted lines by locfit to filter for SATB2 positive cells, including all cells
 #beyond the second peak line and 90% of cells between valley and second peak line
@@ -130,30 +138,30 @@ for (gene in genelist) {
   }
 }
 
-#Trying different powertransformation 
-#Trying more modes
-location.2 <- list()
-for (gene in genelist) {
-  for( s in names(data) ) {
-    a <- data[[s]][[paste0("smooth_", gene)]]
-    a <- a[ a < .9 ]
-    location.2[[s]][[paste0("locmodes", gene)]] <- multimode::locmodes( a ^.2, 3 )$location^(1/.2)
-    location.2[[s]][[paste0("thresh", gene)]] <- location.2[[s]][[paste0("locmodes", gene)]][4]
-  }
-}
+# #Trying different powertransformation 
+# #Trying more modes
+# location.2 <- list()
+# for (gene in genelist) {
+#   for( s in names(data) ) {
+#     a <- data[[s]][[paste0("smooth_", gene)]]
+#     a <- a[ a < .9 ]
+#     location.2[[s]][[paste0("locmodes", gene)]] <- multimode::locmodes( a ^.2, 3 )$location^(1/.2)
+#     location.2[[s]][[paste0("thresh", gene)]] <- location.2[[s]][[paste0("locmodes", gene)]][4]
+#   }
+# }
 
-#Doing multimode only on CD3E pos cells
-s <- samplename
-location.3 <- list()
-for (gene in genelist) {
-  for( s in names(data)[11:12] ) {
-    a <- data[[s]][[paste0("smooth_", gene)]]
-    a <- a[CD3Epos[[s]]]
-    a <- a[ a < .9 ]
-    location.3[[s]][[paste0("locmodes", gene)]] <- multimode::locmodes( a ^.15, 2 )$location^(1/.15)
-    location.3[[s]][[paste0("thresh", gene)]] <- location.3[[s]][[paste0("locmodes", gene)]][2]
-  }
-}
+# #Doing multimode only on CD3E pos cells
+# s <- samplename
+# location.3 <- list()
+# for (gene in genelist) {
+#   for( s in names(data)[11:12] ) {
+#     a <- data[[s]][[paste0("smooth_", gene)]]
+#     a <- a[CD3Epos[[s]]]
+#     a <- a[ a < .9 ]
+#     location.3[[s]][[paste0("locmodes", gene)]] <- multimode::locmodes( a ^.15, 2 )$location^(1/.15)
+#     location.3[[s]][[paste0("thresh", gene)]] <- location.3[[s]][[paste0("locmodes", gene)]][2]
+#   }
+# }
 
 #Produce histograms
 for (sample in names(data)[7]){
@@ -398,15 +406,23 @@ lapply(names(data), function(i){
   facet_wrap(~sample)
 
 
-data %>%
+data2 <- data %>%
   bind_rows( .id="sample" ) %>%
-  as_tibble %>%
+  as_tibble 
+
+cellnames <- lapply(samplenames, colnames)
+  cellnames <- do.call(c, (cellnames))
+  data2 <- add_column(data2, cellnames)
+
+
+data2%>%
+  mutate(smooth_MAST1 = if_else(smooth_MAST1>.9, NA_real_,smooth_MAST1 ))%>%
 ggplot +
   geom_point(aes( 
     x = UMAP1, y = UMAP2, 
-    col = sigmoid( smooth_GZMK^.15, .3 ) ) ) +
+    col = smooth_MAST1^.15 ) , size=.2) +
   facet_wrap( ~ sample ) +
-  scale_color_gradient2( midpoint=0.5 )
+  scale_color_gradientn( colours=rev(rje::cubeHelix(10))[2:10] )
 
 
 data %>%
@@ -482,18 +498,19 @@ colnames(Pseudobulk2) <- names(data)
 Condition <-  c("aggressive", "aggressive", "aggressive", 
                 "indolent", "indolent", "indolent", "indolent",
                 "control", "control", "control", "aggressive", "aggressive")
-coldata2 <- data.frame(Condition, row.names = names(data))
+Sex <- meta$Sex[2:12]
+coldata2 <- data.frame(Condition, Sex, row.names = names(data))
 
 #Create DESeq object
 library("DESeq2")
 dds2 <- DESeqDataSetFromMatrix(countData = Pseudobulk2,
                               colData = coldata2,
-                              design = ~ Condition)
+                              design = ~ Condition+ Sex)
 dds2$Condition <- relevel(dds2$Condition, "control")
 #Error because of 0 in DLBCL3, because locmodes failed to set sensible threshhold, no cells remained
 #now threshhold with ^0.5 power transformation to replace
 
-#Pre-filtering to get ridd of NAs
+#Pre-filtering to get rid of NAs
 keep2 <- rowSums(counts(dds2)) >= 10
 dds2 <- dds2[keep2,]
 dds2 <- DESeq(dds2)
@@ -511,6 +528,88 @@ geom_point() +
   scale_color_gradientn(colours = rev(rje::cubeHelix(10))[2:10])
 
 
+#Histograms for CD4 T cells of MAST1
+#Filter for Cells of interest
+gene <- "ELFN1-AS1"
+plot_hist_gene <- function(gene) {
+CD4cellsMAST1 <- lapply(names(data),  function(samplename) {
+   CD4cells <-samplenames[[ samplename ]] [ gene_overlap , !CD3Epos[[ samplename ]] 
+                                                 & !GZMKpos[[ samplename ]] & !CD79Bneg[[ samplename ]] ]
+   CD4cellsMAST1 <- CD4cells[ gene, ]
+  })%>%
+  unlist()%>%
+   tibble::enframe(name = "cellnames")%>%
+  left_join( data2)
+  CD4cellsMAST1 <- filter(CD4cellsMAST1, CD4cellsMAST1[[paste0("smooth_", gene)]] < .9)
+  
+  CD4cellsMAST1 <- mutate(CD4cellsMAST1, state=case_when(
+    str_starts(CD4cellsMAST1$sample, "F") ~ "indolent",
+    str_starts(CD4cellsMAST1$sample, "r") ~ "control",
+    TRUE ~ "aggressive"
+  ))
+  
+  ggplot(CD4cellsMAST1)+
+  geom_density(aes(CD4cellsMAST1[[paste0("smooth_", gene)]]^.15, col=state))+
+  facet_wrap(~sample)
+    }
+
+plot_hist_gene("MAST1")
+plot_hist_gene("ELFN1-AS1")
 
 
+#Compare whether DESeq2 result and CD4 cell markers match
+CD4markers <- c("IL7R","PLAC8",
+                "KLF2",
+                "CCL5",
+                "NKG7",
+                "CCL4",
+                "PDCD1",
+                "TOX",
+                "TOX2",
+                "CD200",
+                "CXCR5",
+                "ICOS",
+                "IL2RA",
+                "FOXP3")
+k <- res2[order(res2$padj), ]
 
+CD4markers %in% rownames(k)[k$padj < .15] #only PLAC8 above .14 padj
+
+#Clustering of CD4 T cells
+#TH <- PLAC8pos, !PDCD1pos, !IL2RApos
+#TFH <- !PLAC8pos, PDCD1pos, !IL2RApos
+#TReg <- !PLAC8pos, !PDCD1pos, IL2RApos
+
+PLAC8pos <- sapply(names(data), filter_gene_pos, "PLAC8")
+PDCD1pos <- sapply(names(data), filter_gene_pos, "PDCD1")
+IL2RApos <- sapply(names(data), filter_gene_pos, "IL2RA")
+
+
+plot_hist_gene_celltypes <- function(gene) {
+  CD4cellsMAST1 <- lapply(names(data),  function(samplename) {
+    CD4cells <-samplenames[[ samplename ]] [ gene_overlap , !CD3Epos[[ samplename ]] 
+                                             & !GZMKpos[[ samplename ]] & !CD79Bneg[[ samplename ]] ]
+    CD4cellsMAST1 <- CD4cells[ gene, ]
+  })%>%
+    unlist()%>%
+    tibble::enframe(name = "cellnames")%>%
+    left_join( data2)
+  CD4cellsMAST1 <- filter(CD4cellsMAST1, CD4cellsMAST1[[paste0("smooth_", gene)]] < .9)
+  
+  CD4cellsMAST1 <- mutate(CD4cellsMAST1, state=case_when(
+    str_starts(CD4cellsMAST1$sample, "F") ~ "indolent",
+    str_starts(CD4cellsMAST1$sample, "r") ~ "control",
+    TRUE ~ "aggressive"
+  ))
+  CD4cellsMAST1 <- mutate(CD4cellsMAST1, state=case_when(
+    CD4cellsMAST1$smooth_PLAC8 > location ~ "indolent",
+    str_starts(CD4cellsMAST1$sample, "r") ~ "control",
+    TRUE ~ "aggressive"
+  ))
+  ggplot(CD4cellsMAST1)+
+    geom_density(aes(CD4cellsMAST1[[paste0("smooth_", gene)]]^.15, col=state))+
+    facet_wrap(~sample)
+}
+  
+paste0(gene, "pos") <- data[[sample]][[paste0("smooth_", gene)]] > location[[sample]][[paste0("thresh", gene)]]
+  
