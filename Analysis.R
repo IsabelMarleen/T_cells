@@ -166,7 +166,8 @@ for (gene in genelist) {
 #Produce histograms
 for (sample in names(data)[7]){
   for (gene in genelist[4]) {
-    hist(data[[sample]][[paste0("smooth_", gene)]][data[[sample]][[paste0("smooth_", gene) ]] < .9]^.15, main=c(gene, sample, "with B Cells"), breaks=100)
+    hist(data[[sample]][[paste0("smooth_", gene)]][data[[sample]][[paste0("smooth_", gene) ]] < .9]^.15, 
+         main=c(gene, sample, "with B Cells"), breaks=100)
     abline(v=location[[sample]][[paste0("locmodes", gene)]]^.15, col="yellow")
   }
 }
@@ -346,13 +347,17 @@ filter_gene_pos <- function(sample, gene) {
 
 
 CD3Epos <- sapply(names(data), filter_gene_pos, "CD3E")
+CD3Epos <- Map(cbind, CD3Epos, cellnames=cellnames2)
 GZMKpos <- sapply(names(data), filter_gene_pos, "GZMK")
+GZMKpos <- Map(cbind, GZMKpos, cellnames=cellnames2)
 
 filter_gene_neg <- function(sample, gene) {
   Geneneg<- data[[sample]][[paste0("smooth_", gene)]] < location[[sample]][[paste0("thresh", gene)]]
 }
 
 CD79Bneg <- sapply(names(data), filter_gene_neg, "CD79B")
+CD79Bneg <- Map(rownames, CD79Bneg, cellnames=cellnames2)
+
 #Manually setting threshold to fix DLBCL3 sample, threshold found by Multimode wiht power transformation .5
 CD79Bneg$DLBCL3 <-  data$DLBCL3$smooth_CD79B < 0.01672978^(1/.5)
 
@@ -410,8 +415,8 @@ data2 <- data %>%
   bind_rows( .id="sample" ) %>%
   as_tibble 
 
-cellnames <- lapply(samplenames, colnames)
-  cellnames <- do.call(c, (cellnames))
+cellnames2 <- lapply(samplenames, colnames)
+  cellnames <- do.call(c, (cellnames2))
   data2 <- add_column(data2, cellnames)
 
 
@@ -443,7 +448,7 @@ ggplot +
 #need to work with raw counts
 #3. Create Matrix from vectors
 
-gene_overlap <- reduce(lapply(samplenames, function(i) {
+gene_overlap <- reduce(lapply(samplelist, function(i) {
   rownames(i)
 }), intersect)
 
@@ -487,7 +492,7 @@ plotMA(res, ylim=c(-2,2), main="Cytotoxic T Cells")
 #3. Create Matrix from vectors
 
 Pseudobulk2 <- lapply(names(data),  function(samplename) {
-  Matrix::rowSums( samplenames[[ samplename ]] [ gene_overlap , !CD3Epos[[ samplename ]] 
+  Matrix::rowSums( samplenames[[ samplename ]] [ gene_overlap , CD3Epos[[ samplename ]] 
                                                  & !GZMKpos[[ samplename ]] & !CD79Bneg[[ samplename ]] ]) 
   
 }) %>%
@@ -533,7 +538,7 @@ geom_point() +
 gene <- "ELFN1-AS1"
 plot_hist_gene <- function(gene) {
 CD4cellsMAST1 <- lapply(names(data),  function(samplename) {
-   CD4cells <-samplenames[[ samplename ]] [ gene_overlap , !CD3Epos[[ samplename ]] 
+   CD4cells <-samplenames[[ samplename ]] [ gene_overlap , CD3Epos[[ samplename ]] 
                                                  & !GZMKpos[[ samplename ]] & !CD79Bneg[[ samplename ]] ]
    CD4cellsMAST1 <- CD4cells[ gene, ]
   })%>%
@@ -587,7 +592,7 @@ IL2RApos <- sapply(names(data), filter_gene_pos, "IL2RA")
 
 plot_hist_gene_celltypes <- function(gene) {
   CD4cellsMAST1 <- lapply(names(data),  function(samplename) {
-    CD4cells <-samplenames[[ samplename ]] [ gene_overlap , !CD3Epos[[ samplename ]] 
+    CD4cells <-samplenames[[ samplename ]] [ gene_overlap , CD3Epos[[ samplename ]] 
                                              & !GZMKpos[[ samplename ]] & !CD79Bneg[[ samplename ]] ]
     CD4cellsMAST1 <- CD4cells[ gene, ]
   })%>%
@@ -602,7 +607,7 @@ plot_hist_gene_celltypes <- function(gene) {
     TRUE ~ "aggressive"
   ))
   CD4cellsMAST1 <- mutate(CD4cellsMAST1, state=case_when(
-    CD4cellsMAST1$smooth_PLAC8 > location ~ "indolent",
+    CD4cellsMAST1$smooth_PLAC8 ,
     str_starts(CD4cellsMAST1$sample, "r") ~ "control",
     TRUE ~ "aggressive"
   ))
@@ -611,5 +616,12 @@ plot_hist_gene_celltypes <- function(gene) {
     facet_wrap(~sample)
 }
   
-paste0(gene, "pos") <- data[[sample]][[paste0("smooth_", gene)]] > location[[sample]][[paste0("thresh", gene)]]
-  
+
+filter_gene_pos2 <- function(sample, gene) {
+  Genepos <-data[[ samplename ]][ , CD3Epos[[ samplename ]] 
+                                  & !GZMKpos[[ samplename ]] & !CD79Bneg[[ samplename ]] ]
+  Genepos<- data[[sample]][[paste0("smooth_", gene)]] > location[[sample]][[paste0("thresh", gene)]]
+}
+
+
+CD3Eposfiltered <- sapply(names(data), filter_gene_pos2, "PLAC8") 
